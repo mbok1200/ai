@@ -11,7 +11,11 @@ import re
 from googleapiclient.http import MediaIoBaseDownload
 from pdf2image import convert_from_path
 import pytesseract
+
+from helpers.helpers_fn import sanitize_filename
+
 load_dotenv()  # take environment variables from .env.
+
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 gdrive = "data/gdrive"
@@ -19,9 +23,6 @@ cred_path = os.path.join(BASE_DIR, "credentials.json")
 first_folder_id = os.environ.get('FIRST_FOLDER_ID')
 file_map = {}
     
-def sanitize_filename(filename):
-    # Замінюємо заборонені символи на _
-    return re.sub(r'[\\/:"*?<>|]+', '_', filename)
 # Authenticate and create the service
 def get_gdrive_service():
     creds = None
@@ -59,7 +60,7 @@ def process_folder(service, folder_id, local_path=""):
             print(f"Processing file: {item_path}")
             download_file(service, item['id'], item_path, item['mimeType'], item_path)
             file_map[sanitize_filename(item['name'])] = item["webViewLink"]
-def download_file(service, file_id, file_name, mime_type, item_path=""):
+def download_file(service, file_id, file_name, mime_type):
     request = None
 
     if mime_type.startswith('application/vnd.google-apps.'):
@@ -84,26 +85,7 @@ def download_file(service, file_id, file_name, mime_type, item_path=""):
         while not done:
             status, done = downloader.next_chunk()
             print(f"Download {int(status.progress() * 100)}%.")
-    # if export_mime == 'application/pdf':
-        # convert_pdf_to_txt(item_path, file_name)
-    # Закриваємо файл після завершення завантаження
     fh.close()
-def convert_pdf_to_txt(file_path, file_name):
-    txt_path = os.path.join(file_path + ".txt")
-    # Конвертуємо PDF в зображення
-    images = convert_from_path(file_path)
-    all_paragraphs = []
-    for i, page in enumerate(images):
-        text = pytesseract.image_to_string(page)
-        # Split text into paragraphs (split by double newlines)
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        all_paragraphs.extend(paragraphs)
-    # Save all paragraphs to a text file, each paragraph separated by a blank line
-    with open(txt_path, 'w', encoding='utf-8') as f:
-        for para in all_paragraphs:
-            f.write(para + '\n\n')
-    # Optionally, return the list of paragraphs
-    return all_paragraphs
 if __name__ == '__main__':
     service = get_gdrive_service()
     process_folder(service, first_folder_id)

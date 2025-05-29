@@ -1,4 +1,4 @@
-from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 import json
 from datasets import Dataset

@@ -5,7 +5,9 @@ import re
 from docx import Document
 import pandas as pd
 from pypdf import PdfReader
-
+# from googleapiclient.discovery import build
+def sanitize_filename(filename):
+    return re.sub(r'[\\/:"*?<>|]+', '_', filename)
 # Load file map from JSON
 def load_file_map():
     try:
