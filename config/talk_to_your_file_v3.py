@@ -8,6 +8,11 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import ChatPromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
+import pysqlite3
+import sys
+
+# Replace the built-in sqlite3 module with pysqlite3 (bundled with newer SQLite)
+sys.modules["sqlite3"] = pysqlite3
 from langchain_chroma import Chroma
 from langchain_aws import ChatBedrock
 import webbrowser
