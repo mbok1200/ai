@@ -8,12 +8,8 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import ChatPromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
-import pysqlite3
-import sys
-
-# Replace the built-in sqlite3 module with pysqlite3 (bundled with newer SQLite)
-sys.modules["sqlite3"] = pysqlite3
-from langchain_chroma import Chroma
+# from langchain_chroma import Chroma
+from langchain.vectorstores import FAISS
 from langchain_aws import ChatBedrock
 import webbrowser
 from helpers.helpers_fn import extract_text_from_local_file, get_all_files, google_cse_search, load_file_map
@@ -49,7 +45,12 @@ def init_embeddings():
         model_kwargs={'device': device},
         encode_kwargs={'normalize_embeddings': True}
     )
-
+@st.cache_resource(show_spinner=False)
+def init_faiss():
+    embeddings = init_embeddings()
+    # Створюємо порожню FAISS базу
+    vectorstore = FAISS.from_texts([], embedding=embeddings)
+    return vectorstore
 # Initialize ChromaDB and create retriever
 @st.cache_resource(show_spinner=False)
 def init_chromadb():
@@ -119,7 +120,7 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
 if 'vectorstore' not in st.session_state:
-    vectorstore = init_chromadb()
+    vectorstore =  init_faiss()#init_chromadb()
     st.session_state.vectorstore = vectorstore
     st.session_state.llm = init_chat_model()
     st.session_state.memory = init_memory()

@@ -15,7 +15,7 @@ base_model = AutoModelForCausalLM.from_pretrained(base_model_name)
 
 # Підключаємо LoRA-адаптер
 model = PeftModel.from_pretrained(base_model, lora_path)
-
+model = model.merge_and_unload()  # Critical for materializing tensors
 # Визначаємо пристрій
 device = -1#0 if torch.cuda.is_available() else -1
 
