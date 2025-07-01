@@ -16,6 +16,7 @@ fi
 # Check for .env
 if [ -f ".env" ]; then
   echo ".env exists ✅"
+  source .env
 else
   echo ".env is missing ❌"
   exit 1

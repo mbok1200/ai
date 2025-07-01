@@ -7,10 +7,7 @@ import pickle
 import os
 from dotenv import load_dotenv
 import json
-import re
 from googleapiclient.http import MediaIoBaseDownload
-from pdf2image import convert_from_path
-import pytesseract
 
 from helpers.helpers_fn import sanitize_filename
 
@@ -58,7 +55,7 @@ def process_folder(service, folder_id, local_path=""):
             process_folder(service, item['id'], item_path)
         else:
             print(f"Processing file: {item_path}")
-            download_file(service, item['id'], item_path, item['mimeType'], item_path)
+            download_file(service, item['id'], item_path, item['mimeType'])
             file_map[sanitize_filename(item['name'])] = item["webViewLink"]
 def download_file(service, file_id, file_name, mime_type):
     request = None
@@ -86,6 +83,22 @@ def download_file(service, file_id, file_name, mime_type):
             status, done = downloader.next_chunk()
             print(f"Download {int(status.progress() * 100)}%.")
     fh.close()
+def create_dataset(file_map, output_path):
+    dataset = []
+    for name, url in file_map.items():
+        item = {
+            "instruction": "Проаналізуй цей запит",
+            "input": name,
+            "output": f"Посилання на документ: {url}",
+            "metadata": {
+                "language": "ua",
+                "source": url,
+                "category": name
+            }
+        }
+        dataset.append(item)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(dataset, f, ensure_ascii=False, indent=2)
 if __name__ == '__main__':
     service = get_gdrive_service()
     process_folder(service, first_folder_id)
@@ -93,3 +106,6 @@ if __name__ == '__main__':
     with open(map_path, "w", encoding="utf-8") as f:
         json.dump(file_map, f, ensure_ascii=False, indent=2)
     # Example of downloading a file
+    # Створення датасету
+    dataset_path = os.path.join(BASE_DIR, "gdrive_dataset.json")
+    create_dataset(file_map, dataset_path)
