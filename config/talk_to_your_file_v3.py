@@ -49,7 +49,7 @@ def init_embeddings():
 def init_faiss():
     embeddings = init_embeddings()
     # Створюємо порожню FAISS базу
-    vectorstore = FAISS.from_texts([], embedding=embeddings)
+    vectorstore = FAISS.from_texts(["stub"], embedding=embeddings)
     return vectorstore
 # Initialize ChromaDB and create retriever
 @st.cache_resource(show_spinner=False)
