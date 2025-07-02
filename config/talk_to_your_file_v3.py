@@ -228,7 +228,7 @@ with st.sidebar:
                 shutil.rmtree(PERSIST_DIR)
                 os.makedirs(PERSIST_DIR, exist_ok=True)
             # Оновлюємо vectorstore після очищення
-            st.session_state.vectorstore = init_chromadb()
+            st.session_state.vectorstore = init_faiss()#init_chromadb()
             st.session_state.processed_files = set()
             st.session_state.memory.clear()
         with st.spinner(t("indexing")):
