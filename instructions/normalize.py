@@ -1,7 +1,7 @@
 import re
 import os
 from collections import defaultdict
-from config.helpers.helpers_fn import get_all_files
+from project.helpers.helpers_fn import get_all_files
 
 directories = 'data/text'
 save_directory = 'data/structured'

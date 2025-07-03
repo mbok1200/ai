@@ -1,5 +1,5 @@
 import json
-from config.helpers.helpers_fn import split_dialog, get_all_files
+from project.helpers.helpers_fn import split_dialog, get_all_files
 class Regenerator:
     def __init__(self):
         self.name = "Regenerator"

@@ -12,6 +12,8 @@ data/*.pdf
 data/*.docx
 data/*.epub
 *.json
+!project/helpers/translation.json
+!project/helpers/gdrive_file_map.json
 *.jsonl
 config/*.json
 config/*.jsonl

@@ -1,11 +1,11 @@
 import json
 from peft import PeftModel
 import streamlit as st
-import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from langchain.prompts import ChatPromptTemplate
 
-base_model_name = "EleutherAI/gpt-neo-1.3B"
-lora_path = "lora_gpt_neo_1_3b_adapter"  # має бути шлях до каталогу з adapter_config.json, adapter_model.bin
+base_model_name = "google/gemma-2-2b"
+lora_path = "bradi12/lora_model_perfs"
 
 # Завантажуємо токенайзер від базової моделі
 tokenizer = AutoTokenizer.from_pretrained(base_model_name)
@@ -27,59 +27,37 @@ st.write("ІнструкціЇ:")
 instruction = st.checkbox("Проаналізуй цей запит", value=True)
 input_text = st.text_area("Вхід", placeholder="Введіть текст запиту...")
 def build_interface_prompt(input_text: str, instruction: bool = True) -> str:
-    prompt = ""
-    if instruction:
-        prompt += (
-            "### Instruction:\n"
-            "You are an AI assistant. Given an input query, analyze it and generate a structured JSON response.\n"
+    prompt = """### Instruction:
+        "You are an AI assistant. Given an input query, analyze it and generate a structured JSON response.\n"
             "The response must contain an object with the following keys:\n"
             " - 'text': a helpful answer to the query (in the same language as the input).\n"
             " - 'metadata': an object with:\n"
             "    - 'source': a valid URL starting with 'https://'\n"
             "    - 'language': the detected language of the input (ISO 639-1, like 'en' or 'uk')\n"
             " - 'function_method' (optional): if applicable, specify the internal function to call for this query.\n"
-            "   For example: 'get_weather', 'convert_currency', 'search_wikipedia', or leave null.\n\n"
-        )
-    prompt += f"""### Input:
-    {input_text}
+        ### Input:{input_text}
+        ### Output:"""
 
-    ### Output:
-    """
-    return prompt
+
+
+    PROMPT = ChatPromptTemplate.from_template(prompt)
+    return PROMPT.format_prompt(
+            input_text=input_text
+        ).to_string()
 if st.button("Отримати відповідь"):
     with st.spinner("Генеруємо відповідь..."):
-        prompt = build_interface_prompt(input_text, instruction)  # Додаємо цю строку
+        prompt = build_interface_prompt(input_text, instruction)
         result = generator(
             prompt,
-            max_new_tokens=256,
+            max_new_tokens=64,
             do_sample=True,
             temperature=0.7,
             pad_token_id=tokenizer.eos_token_id
         )
-        print(f"{result}")
-        
         generated = result[0]["generated_text"]
-        output = generated[len(prompt):].strip()
-        
-        try:
-            parsed = json.loads(output)
-            answer_text = parsed.get("text", "").strip()
-            metadata = parsed.get("metadata", {})
-            source = metadata.get("source", "")
-            language = metadata.get("language", "")
-        
-            st.markdown(f"**Відповідь:**\n\n{answer_text}")
-        
-            if source or language:
-                st.markdown("**Метадані:**")
-                if source:
-                    st.markdown(f"- Джерело: `{source}`")
-                if language:
-                    st.markdown(f"- Мова: `{language}`")
-        
-            if st.checkbox("Показати повну відповідь (JSON)"):
-                st.code(output, language="json")
-        
-        except json.JSONDecodeError:
-            st.warning("⚠️ Не вдалося розпарсити JSON. Ось сирий результат:")
-            st.code(output)
+        # Витягуємо відповідь після "Assistant:"
+        if "Assistant:" in generated:
+            answer = generated.split("Assistant:", 1)[-1].strip()
+        else:
+            answer = generated.strip()
+        st.markdown(f"**Відповідь:**\n\n{answer}")

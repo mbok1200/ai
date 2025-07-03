@@ -6,7 +6,7 @@ import docx
 import pandas as pd
 import pdfplumber
 
-from config.helpers.helpers_fn import get_all_files
+from project.helpers.helpers_fn import get_all_files
 from PIL import Image
 import pytesseract
 

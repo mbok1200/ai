@@ -6,7 +6,7 @@ from peft import PeftModel, get_peft_model, LoraConfig, TaskType
 
 OUTPUT_DIR= "lora_gpt_neo_1_3b_adapter"
 MERGED_DIR = "lora_gpt_neo_1_3b_merged"
-MODEL_NAME = "EleutherAI/gpt-neo-1.3B"
+MODEL_NAME = "google/gemma-2-2b"
 DATA_FILE = "data/merged_with_links_is.jsonl"
 PROMPT_TEMPLATE = """### Instruction:
 {instruction}
@@ -34,7 +34,7 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
 tokenizer.pad_token = tokenizer.eos_token
 
 # 3. Модель
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, attn_implementation="eager", torch_dtype=torch.float16 if device.type == 'cuda' else torch.float32)
 model.gradient_checkpointing_enable()
 model.enable_input_require_grads()
 model.config.use_cache = False
@@ -43,7 +43,10 @@ model.config.use_cache = False
 lora_config = LoraConfig(
     r=8,
     lora_alpha=16,
-    target_modules=["attn.c_attn", "mlp.c_fc"],  # GPT-Neo naming
+   target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+    ],
     lora_dropout=0.05,
     bias="none",
     task_type=TaskType.CAUSAL_LM
@@ -111,12 +114,23 @@ trainer = Trainer(
 
 # 9. Запуск тренування
 trainer.train()
+
+# Зберігаємо LoRA-адаптер (як є, це завжди FP32)
 model.save_pretrained(OUTPUT_DIR)
 tokenizer.save_pretrained(OUTPUT_DIR)
 
 # === 10. Об’єднання LoRA + base (для інференсу) ===
-base_model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-lora_model = PeftModel.from_pretrained(base_model, OUTPUT_DIR)
-merged = lora_model.merge_and_unload()
-merged.save_pretrained(MERGED_DIR)
-tokenizer.save_pretrained(MERGED_DIR)
+
+# Зберегти злиту модель у FP16 (для GPU)
+base_model_fp16 = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float16)
+lora_model_fp16 = PeftModel.from_pretrained(base_model_fp16, OUTPUT_DIR)
+merged_fp16 = lora_model_fp16.merge_and_unload()
+merged_fp16.save_pretrained(f"{MERGED_DIR}_fp16")
+tokenizer.save_pretrained(f"{MERGED_DIR}_fp16")
+
+# Зберегти злиту модель у FP32 (для CPU)
+base_model_fp32 = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.float32)
+lora_model_fp32 = PeftModel.from_pretrained(base_model_fp32, OUTPUT_DIR)
+merged_fp32 = lora_model_fp32.merge_and_unload()
+merged_fp32.save_pretrained(f"{MERGED_DIR}_fp32")
+tokenizer.save_pretrained(f"{MERGED_DIR}_fp32")
