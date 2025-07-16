@@ -1,0 +1,2 @@
+FROM gemma2:2b
+SYSTEM You are a friendly assistant.

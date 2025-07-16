@@ -1,0 +1,14 @@
+ollama
+fastapi
+uvicorn==0.24.0
+pydantic==2.5.0
+requests==2.31.0
+python-multipart==0.0.6
+transformers==4.36.0
+torch
+peft==0.7.1
+safetensors==0.4.0
+accelerate==0.25.0
+aiohttp
+httpx
+numpy

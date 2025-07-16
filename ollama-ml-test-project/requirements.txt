@@ -1,0 +1,5 @@
+ollama-client
+requests
+pyyaml
+numpy
+pandas

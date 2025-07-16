@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  ollama-gemma:
+    build: .
+    network_mode: host
+    volumes:
+      - ./src:/app/src:rw  # Додайте цю лінію для синхронізації коду
+      - ./lora_adapter:/app/lora_adapter:ro
+    environment:
+      - OLLAMA_URL=http://localhost:11434
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    entrypoint: ["python", "/app/src/app.py"]
+
+  web-ui:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./examples/web_client.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      - ollama-gemma
+    restart: unless-stopped
