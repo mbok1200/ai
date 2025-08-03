@@ -1,103 +1,117 @@
 import json
 import gradio as gr
 import os
-import logging
 from typing import Dict
 from dotenv import load_dotenv
 from ai_system import AISystem
-
+from history_manager import AdvancedHistoryManager
 load_dotenv(".env")
-
-# Налаштування логування
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+history_manager = AdvancedHistoryManager()
 def load_file_map() -> Dict[str, str]:
-    """Завантаження мапи файлів з конфігурації"""
     file_map = {}
     try:
-        with open("data/gdrive_file_map.json", "r") as f:
-            file_map = json.load(f)
+        # Try UTF-8 first, then fallback to other encodings
+        encodings_to_try = ['utf-8', 'utf-8-sig', 'cp1251', 'latin1']
+        
+        for encoding in encodings_to_try:
+            try:
+                with open("./data/gdrive_file_map.json", "r", encoding=encoding) as f:
+                    file_map = json.load(f)
+                print(f"✅ File map loaded successfully with {encoding} encoding")
+                break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        else:
+            print("❌ Could not decode file with any encoding, using empty map")
+            
     except FileNotFoundError:
-        logger.warning("Файл file_map.json не знайдено, використовується порожня мапа")
+        print("⚠️ Файл gdrive_file_map.json не знайдено, створюю порожню мапу")
+        # Create the data directory and empty file if it doesn't exist
+        os.makedirs("./data", exist_ok=True)
+        with open("./data/gdrive_file_map.json", "w", encoding="utf-8") as f:
+            json.dump({}, f, ensure_ascii=False, indent=2)
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        print("⚠️ Using empty file map")
+    except Exception as e:
+        print(f"❌ Unexpected error loading file map: {e}")
+        print("⚠️ Using empty file map")
+    
     return file_map
 file_map = load_file_map()
 
-
-# Глобальний екземпляр системи
 ai_system = AISystem()
+def load_previous_session(session_list: str, session_state: dict) -> tuple:
+    if session_list:
+        # Створюємо новий dict якщо session_state є tuple або None
+        if not isinstance(session_state, dict):
+            session_state = {}
+            
+        session_state["session_id"] = session_list
+        
+        # Переконайтеся, що history_manager повертає правильний формат
+        history = history_manager.get_session_history(session_list, format_type="messages")
+        
+        # Перевіряємо і конвертуємо формат якщо потрібно
+        formatted_history = []
+        for msg in history:
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                formatted_history.append(msg)
+            elif isinstance(msg, (list, tuple)) and len(msg) >= 2:
+                # Конвертуємо старий формат [user_msg, bot_msg] в новий
+                formatted_history.append({"role": "user", "content": str(msg[0])})
+                formatted_history.append({"role": "assistant", "content": str(msg[1])})
+        
+        return formatted_history, session_state
+    return [], session_state if isinstance(session_state, dict) else {}
 
-def chat_interface(message: str, history: list, mode: str) -> tuple:
-    """Інтерфейс чату для Gradio з режимами роботи"""
+def clear_chat(session_state: dict) -> tuple:
+    """Створює нову сесію та очищає чат"""
+    if not isinstance(session_state, dict):
+        session_state = {}
+        
+    new_session_id = history_manager.create_session()
+    session_state["session_id"] = new_session_id
+    # Повертаємо порожній список для chatbot та оновлений session_state
+    return [], session_state
+
+def chat_interface(message: str, history: list, mode: str, session_state: dict) -> tuple:
+    # Створюємо новий dict якщо session_state є tuple або None
+    if not isinstance(session_state, dict):
+        session_state = {}
+        
+    if "session_id" not in session_state:
+        session_state["session_id"] = history_manager.create_session({
+            "mode": mode,
+            "created_by": "gradio_interface"
+        })
+    
+    session_id = session_state["session_id"]
     try:
         result = ai_system.process_query(message, mode)
-        
-        # Форматуємо відповідь
         response = result['response']
-        source_info = f"\n\n---\n📍 **Джерело:** {result['source']}"
         
-        # Додаємо інформацію про режим
-        mode_emoji = {
-            'rag_only': '📚',
-            'hybrid': '🔍', 
-            'web_only': '🌐',
-            'research': '🔬'
-        }
-        source_info += f"\n🎯 **Режим:** {mode_emoji.get(mode, '❓')} {mode}"
+        # Правильний формат для Gradio Chatbot (messages format)
+        user_message = {"role": "user", "content": message}
+        assistant_message = {"role": "assistant", "content": response}
         
-        # Додаємо метадані якщо є
-        if result['metadata']:
-            metadata = result['metadata']
-            if 'confidence' in metadata:
-                source_info += f"\n💯 **Впевненість:** {metadata['confidence']:.1%}"
-            if 'functions' in metadata:
-                source_info += f"\n🔧 **Функції:** {', '.join(metadata['functions'])}"
-            if 'score' in metadata:
-                source_info += f"\n📊 **Релевантність:** {metadata['score']:.1%}"
-            if 'sources_analyzed' in metadata:
-                source_info += f"\n🔍 **Джерел проаналізовано:** {metadata['sources_analyzed']}/{metadata.get('total_sources', 'N/A')}"
-            if 'analysis_type' in metadata:
-                source_info += f"\n🧠 **Тип аналізу:** {metadata['analysis_type']}"
-            if 'sources_count' in metadata:
-                source_info += f"\n📄 **Веб-джерел:** {metadata['sources_count']}"
-            if 'sources' in metadata and isinstance(metadata['sources'], list):
-                source_info += f"\n📚 **RAG джерел:** {len(metadata['sources'])}"
-                source_info += "\n\n**Джерела:**"
-                for src in metadata['sources']:
-                    # Безпечне отримання ключа для file_map
-                    source_key = src['source'].split('.')[0] if '.' in src['source'] else src['source']
-                    
-                    if source_key in file_map:
-                        source_info += f"\n- <span style='color: #2563eb;'>[{src['title']}]({file_map[source_key]})</span>"
-                    else:
-                        source_info += f"\n- <span style='color: #dc2626;'>{src['title']}</span> (джерело: {src['source']})"
-            if 'context_quality' in metadata:
-                quality = metadata['context_quality']
-                quality_emoji = "✅" if quality['is_good'] else "⚠️"
-                source_info += f"\n{quality_emoji} **Якість контенту:** {quality['reason']}"
-        
-        full_response = response + source_info
-        
-        # Оновлюємо історію в новому форматі "messages"
-        new_message = {"role": "user", "content": message}
-        assistant_message = {"role": "assistant", "content": full_response}
-        
-        # Додаємо повідомлення до історії
-        history.append(new_message)
+        # Додаємо до історії
+        history.append(user_message)
         history.append(assistant_message)
         
-        return "", history
+        # Зберігаємо в базу даних
+        history_manager.save_message(session_id, "user", message)
+        history_manager.save_message(session_id, "assistant", response)
+        
+        return "", history, session_state
         
     except Exception as e:
-        error_response = f"❌ Вибачте, сталася помилка: {str(e)}"
+        error_message = f"❌ Помилка: {str(e)}"
+        error_response = {"role": "assistant", "content": error_message}
+        history.append({"role": "user", "content": message})
+        history.append(error_response)
         
-        # Форматуємо помилку в новому форматі
-        new_message = {"role": "user", "content": message}
-        error_message = {"role": "assistant", "content": error_response}
-        
-        history.append(new_message)
-        history.append(error_message)
-        
-        return "", history
+        return "", history, session_state
 
 def create_interface():
     """Створення Gradio інтерфейсу"""
@@ -116,14 +130,30 @@ def create_interface():
         border-radius: 10px;
     }
     """
-    
+
+    # Функція для отримання списку сесій
+    def get_session_choices():
+        try:
+            sessions = history_manager.get_sessions()
+            return [
+                (f"Сесія {s['session_id'][:8]}... ({s['message_count']} повідомлень)", s['session_id'])
+                for s in sessions
+            ]
+        except Exception as e:
+            print(f"Error getting sessions: {e}")
+            return []
+
     with gr.Blocks(title="🤖 AI Assistant", css=css, theme=gr.themes.Soft(), fill_height=True, fill_width=True) as app:
+        # Ініціалізуємо State з початковим значенням dict
+        session_state = gr.State(value={})
+        
         gr.Markdown(
             """
             # 🤖 AI Assistant ### RAG + Function Calling + Google Search
             Система поєднує: 📚 **RAG**, 🔧 **Function Calling**, 🔍 **Google Search** 
             """
         )
+        
         with gr.Row(scale=2):
             with gr.Column():
                 chatbot = gr.Chatbot(
@@ -146,6 +176,7 @@ def create_interface():
 
                 # Кнопка очищення
                 clear_btn = gr.ClearButton([msg, chatbot], value="🗑️ Очистити")
+                
         with gr.Sidebar(position="left"):
             with gr.Column(scale=1):
                 gr.Markdown("### 💡 Приклади запитів:")
@@ -162,28 +193,22 @@ def create_interface():
                 ]
                 
                 for example in examples:
-                    gr.Button(
-                        example, 
-                        size="sm"
-                    ).click(
-                        lambda x=example: (x, []),
-                        outputs=[msg, chatbot],
-                        queue=False
-                    )
+                    gr.Markdown(example)
+                    
                 with gr.Group():
                     gr.Markdown("### 🚀 Швидкі режими:")
                     
                     mode_buttons = gr.Radio(
                         choices=[
-                            ("📚 Тільки база знань", "rag_only"),
+                            ("📚 Тільки Redmine", "redmine"),
                             ("🔍 База + веб-пошук", "hybrid"),
-                            ("🌐 Тільки веб-пошук", "web_only"),
-                            # ("🔬 Дослідницький режим", "research")
+                            ("🌐 Тільки веб-пошук", "web_only")
                         ],
                         value="hybrid",
                         label="Режим роботи:",
                         info="Оберіть стратегію пошуку"
                     )
+                    
                 gr.Markdown("### ℹ️ Статус системи:")
                 
                 # Перевірка статусу компонентів
@@ -206,10 +231,65 @@ def create_interface():
                 status_info.append(f"{google_status} Google Search")
                 
                 gr.Markdown("\n\n".join(status_info))
+                
+        with gr.Sidebar(position="right"):
+            gr.Markdown("### 📚 Історія сесій")
+            
+            # Dropdown для вибору сесії з початковими choices
+            session_dropdown = gr.Dropdown(
+                choices=get_session_choices(),  # Ініціалізуємо з поточними сесіями
+                label="Попередні сесії",
+                info="Виберіть сесію для продовження",
+                allow_custom_value=False
+            )
+
+            load_session_btn = gr.Button("📂 Завантажити сесію", size="sm")
+            refresh_sessions_btn = gr.Button("🔄 Оновити список", size="sm")
+            remove_sessions_btn = gr.Button("🗑️ Видалити сесію", size="sm")
+
+        # Event handlers - after all components are defined
+        def refresh_sessions():
+            """Оновлює список сесій в dropdown"""
+            new_choices = get_session_choices()
+            return gr.Dropdown(choices=new_choices, value=None)
+        def remove_session(іnput_session: str):
+            new_choices = get_session_choices()
+            history_manager.delete_session(new_choices)
+        load_session_btn.click(
+            load_previous_session,
+            inputs=[session_dropdown, session_state],
+            outputs=[chatbot, session_state]
+        )
         
-        # Прив'язуємо події з режимом
-        msg.submit(chat_interface, [msg, chatbot, mode_buttons], [msg, chatbot], queue=True)
-        send_btn.click(chat_interface, [msg, chatbot, mode_buttons], [msg, chatbot], queue=True)
+        refresh_sessions_btn.click(
+            refresh_sessions, 
+            outputs=[session_dropdown]
+        )
+        remove_sessions_btn.click(
+            remove_session,
+            inputs=[session_dropdown]
+        )
+        # Chat events
+        msg.submit(
+            chat_interface, 
+            inputs=[msg, chatbot, mode_buttons, session_state], 
+            outputs=[msg, chatbot, session_state], 
+            queue=True
+        )
+        
+        send_btn.click(
+            chat_interface, 
+            inputs=[msg, chatbot, mode_buttons, session_state], 
+            outputs=[msg, chatbot, session_state], 
+            queue=True
+        )
+        
+        # Clear button event - потрібно оновити outputs
+        clear_btn.click(
+            clear_chat,
+            inputs=[session_state],
+            outputs=[chatbot, session_state]  # Додано chatbot для очищення чату
+        )
     
     return app
 

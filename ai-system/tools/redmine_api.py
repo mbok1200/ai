@@ -1,24 +1,22 @@
-import json
 import requests, os
 from typing import Dict
 from datetime import datetime, timedelta
-
+from interfaces.dialogue_state import DialogueState
+from interfaces.redmine_state import RedmineState
 class RedmineAPI:
     """Клас для роботи з Redmine API"""
     
     def __init__(self):
-        self.base_url = os.getenv("REDMINE_URL", "").rstrip('/')
-        self.api_key = os.getenv("REDMINE_API_KEY")
-        self.user_id = os.getenv("REDMINE_USER_ID")
-    
-    def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Dict:
+        self.state = RedmineState()
+
+    def _make_request(self, patch: str, method: str = "GET", data: Dict = None) -> Dict:
         """Базовий метод для HTTP запитів до Redmine"""
-        if not self.base_url or not self.api_key:
+        if not self.state.redmine_url or not self.state.redmine_api_key:
             raise Exception("Redmine API не налаштований")
         
-        url = f"{self.base_url}/issues.json"
+        url = f"{self.state.redmine_url}/{patch}.json"
         headers = {
-            'X-Redmine-API-Key': self.api_key,
+            'X-Redmine-API-Key': self.state.redmine_api_key,
             'Content-Type': 'application/json'
         }
         
@@ -37,20 +35,22 @@ class RedmineAPI:
             
         except requests.exceptions.RequestException as e:
             raise Exception(f"Помилка Redmine API: {str(e)}")
- 
-    def access_to_redmine(self) -> str:
+
+    def access_to_redmine(self, state: DialogueState) -> DialogueState:
         """Перевірка доступу до Redmine API"""
         try:
             url = f"{self.base_url}/issues.json"
             headers = {'X-Redmine-API-Key': self.api_key}
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            return "✅ Доступ до Redmine API підтверджено"
+            state.context = "✅ Доступ до Redmine API підтверджено"
+            return state
         except Exception as e:
-            return f"❌ Помилка доступу до Redmine API: {str(e)}"
+            state.context = f"❌ Помилка доступу до Redmine API: {str(e)}"
+            return state
 
-    def get_issue_by_id(self, issue_id: str) -> str:
-        """Отримання завдання за ID"""
+    def get_issue_by_id(self, state: DialogueState) -> DialogueState:
+        issue_id = state.function_calls[0].get("arguments", {}).get("issue_id", "")
         try:
             # Очищуємо ID від # якщо є
             clean_id = issue_id.replace('#', '').strip()
@@ -62,37 +62,42 @@ class RedmineAPI:
             response.raise_for_status()
             
             issue = response.json()['issue']
-            
-            return self._format_issue(issue)
-            
+            state.context = self._format_issue(issue)
+            return state
+
         except Exception as e:
-            return f"❌ Не вдалося знайти завдання {issue_id}: {str(e)}"
-    
-    def get_issue_by_date(self, date: str) -> str:
+            state.context = f"❌ Не вдалося знайти завдання {issue_id}: {str(e)}"
+            return state
+
+    def get_issue_by_date(self, state: DialogueState) -> DialogueState:
         """Отримання завдань за датою"""
+        date = state.function_calls[0].get("arguments", {}).get("date", "")
         try:
             # Парсимо дату
             parsed_date = self._parse_date(date)
-            
             params = {
-                'assigned_to_id': self.user_id,
+                'assigned_to_id': self.state.user_id,
                 'updated_on': f">={parsed_date}",
                 'limit': 10
             }
             
             data = self._make_request('', params=params)
+            print(f"Parsed date: {data}")
             
             if not data.get('issues'):
                 return f"📅 На {date} завдань не знайдено"
             
             issues_text = [self._format_issue_short(issue) for issue in data['issues']]
-            return f"📅 Завдання на {date}:\n\n" + "\n".join(issues_text)
-            
+            state.context = f"📅 Завдання на {date}:\n\n" + "\n".join(issues_text)
+            return state
+
         except Exception as e:
-            return f"❌ Помилка пошуку завдань за датою: {str(e)}"
+            state.context = f"❌ Помилка пошуку завдань за датою {date}: {str(e)}"
+            return state
     
-    def search_issues(self, search_term: str) -> str:
+    def search_issues(self, state: DialogueState) -> DialogueState:
         """Пошук завдань за текстом"""
+        search_term = state.function_calls[0].get("arguments", {}).get("search_term", "")
         try:
             params = {
                 'assigned_to_id': self.user_id,
@@ -103,16 +108,20 @@ class RedmineAPI:
             data = self._make_request('', params=params)
             
             if not data.get('issues'):
-                return f"🔍 За запитом '{search_term}' нічого не знайдено"
-            
-            issues_text = [self._format_issue_short(issue) for issue in data['issues']]
-            return f"🔍 Результати пошуку '{search_term}':\n\n" + "\n".join(issues_text)
-            
-        except Exception as e:
-            return f"❌ Помилка пошуку: {str(e)}"
+                state.context = f"🔍 За запитом '{search_term}' нічого не знайдено"
+                return state
 
-    def get_issue_by_name(self, issue_name: str) -> str:
+            issues_text = [self._format_issue_short(issue) for issue in data['issues']]
+            state.context = f"🔍 Результати пошуку '{search_term}':\n\n" + "\n".join(issues_text)
+            return state
+
+        except Exception as e:
+            state.context = f"❌ Помилка пошуку: {str(e)}"
+            return state
+
+    def get_issue_by_name(self, state: DialogueState) -> DialogueState:
         """Отримання завдання за назвою"""
+        issue_name = state.function_calls[0].get("arguments", {}).get("issue_name", "")
         try:
             params = {
                 'assigned_to_id': self.user_id,
@@ -124,15 +133,19 @@ class RedmineAPI:
             data = self._make_request('', params=params)
 
             if not data.get('issues'):
-                return f"🔍 За запитом '{issue_name}' нічого не знайдено"
+                state.context = f"🔍 За запитом '{issue_name}' нічого не знайдено"
+                return state
 
             issues_text = [self._format_issue_short(issue) for issue in data['issues']]
-            return f"🔍 Результати пошуку '{issue_name}':\n\n" + "\n".join(issues_text)
+            state.context = f"🔍 Результати пошуку '{issue_name}':\n\n" + "\n".join(issues_text)
+            return state
 
         except Exception as e:
-            return f"❌ Помилка пошуку: {str(e)}"
-    def get_issue_hours(self, issue_name: str) -> str:
+            state.context = f"❌ Помилка пошуку: {str(e)}"
+            return state
+    def get_issue_hours(self, state: DialogueState) -> DialogueState:
         """Отримання годин по завданню"""
+        issue_name = state.function_calls[0].get("arguments", {}).get("issue_name", "")
         try:
             params = {
                 'assigned_to_id': self.user_id,
@@ -143,16 +156,22 @@ class RedmineAPI:
             data = self._make_request('', params=params)
             
             if not data.get('issues'):
-                return f"🔍 За запитом '{issue_name}' нічого не знайдено"
-            
+                state.context = f"🔍 За запитом '{issue_name}' нічого не знайдено"
+                return state
+
             issue = data['issues'][0]
             hours = issue.get('estimated_hours', 0)
-            return f"⏱️ Години по завданню '{issue_name}': {hours} год."
-            
+            state.context = f"⏱️ Години по завданню '{issue_name}': {hours} год."
+            return state
+
         except Exception as e:
-            return f"❌ Помилка отримання годин: {str(e)}"
-    def fill_issue_hours(self, issue_id: str, hours: float, description: str = "") -> str:
+            state.context = f"❌ Помилка отримання годин по завданню '{issue_name}': {str(e)}"
+            return state
+    def fill_issue_hours(self, state: DialogueState ) -> DialogueState:
         """Заповнення годин по завданню"""
+        issue_id = state.function_calls[0].get("arguments", {}).get("issue_id", "")
+        hours = state.function_calls[0].get("arguments", {}).get("hours", 0)
+        description = state.function_calls[0].get("arguments", {}).get("description", "")
         try:
             clean_id = issue_id.replace('#', '').strip()
             
@@ -171,12 +190,13 @@ class RedmineAPI:
             
             response = requests.put(url, headers=headers, json=data)
             response.raise_for_status()
-            
-            return f"✅ Заповнено {hours} год. для завдання #{clean_id}"
-            
+            state.context = f"✅ Заповнено {hours} год. для завдання #{clean_id}"
+            return state
+
         except Exception as e:
-            return f"❌ Помилка заповнення годин: {str(e)}"
-    def get_user_status(self) -> str:
+            state.context = f"❌ Помилка заповнення годин: {str(e)}"
+            return state
+    def get_user_status(self, state: DialogueState) -> DialogueState:
         """Отримання статусу користувача"""
         try:
             url = f"{self.base_url}/users/{self.user_id}.json"
@@ -187,13 +207,14 @@ class RedmineAPI:
             
             user = response.json()['user']
             status = user.get('status', 'Невідомо')
-            
-            return f"👤 Статус користувача: {status}"
-            
+            state.context = f"👤 Статус користувача: {status}"
+            return state
+
         except Exception as e:
             return f"❌ Помилка отримання статусу користувача: {str(e)}"
-    def set_user_status(self, status: str) -> str:
+    def set_user_status(self, state: DialogueState) -> DialogueState:
         """Встановлення статусу користувача"""
+        status = state.function_calls[0].get("arguments", {}).get("status", "")
         try:
             url = f"{self.base_url}/users/{self.user_id}.json"
             headers = {
@@ -209,13 +230,17 @@ class RedmineAPI:
             
             response = requests.put(url, headers=headers, json=data)
             response.raise_for_status()
-            
-            return f"✅ Статус користувача змінено на: {status}"
+            state.context = f"✅ Статус користувача змінено на: {status}"
+            return state
             
         except Exception as e:
-            return f"❌ Помилка встановлення статусу: {str(e)}"
-    def create_issue(self, subject: str, description: str = "", priority: str = "Normal") -> str:
+            state.context = f"❌ Помилка встановлення статусу: {str(e)}"
+            return state
+    def create_issue(self, state: DialogueState) -> DialogueState:
         """Створення нового завдання"""
+        subject = state.function_calls[0].get("arguments", {}).get("subject", "")
+        description = state.function_calls[0].get("arguments", {}).get("description", "")
+        priority = state.function_calls[0].get("arguments", {}).get("priority", "Normal")
         try:
             url = f"{self.base_url}/issues.json"
             headers = {
@@ -235,12 +260,16 @@ class RedmineAPI:
             response.raise_for_status()
             
             issue = response.json()['issue']
-            return f"✅ Завдання створено: {self._format_issue(issue)}"
+            state.context = f"✅ Завдання створено: {self._format_issue(issue)}"
+            return state
             
         except Exception as e:
-            return f"❌ Помилка створення завдання: {str(e)}"
-    def assign_issue(self, issue_id: str, user_id: str) -> str: 
+            state.context = f"❌ Помилка створення завдання: {str(e)}"
+            return state
+    def assign_issue(self, state: DialogueState) -> DialogueState: 
         """Призначення завдання користувачу"""
+        issue_id = state.function_calls[0].get("arguments", {}).get("issue_id", "")
+        user_id = state.function_calls[0].get("arguments", {}).get("user_id", "")
         try:
             clean_id = issue_id.replace('#', '').strip()
             
@@ -258,13 +287,14 @@ class RedmineAPI:
             
             response = requests.put(url, headers=headers, json=data)
             response.raise_for_status()
-            
-            return f"✅ Завдання #{clean_id} призначено користувачу {user_id}"
-            
+            state.context = f"✅ Завдання #{clean_id} призначено користувачу {user_id}"
+            return state            
         except Exception as e:
-            return f"❌ Помилка призначення завдання: {str(e)}"
-    def get_wiki_info(self, topic: str) -> str:
+            state.context = f"❌ Помилка призначення завдання #{issue_id} користувачу {user_id}: {str(e)}"
+            return state
+    def get_wiki_info(self, state: DialogueState) -> DialogueState:
         """Отримання інформації з Wiki"""
+        topic = state.function_calls[0].get("arguments", {}).get("topic", "")
         try:
             url = f"{self.base_url}/wiki/{topic}.json"
             headers = {'X-Redmine-API-Key': self.api_key}
@@ -273,11 +303,13 @@ class RedmineAPI:
             response.raise_for_status()
             
             wiki_info = response.json()['wiki']
-            return f"📖 Wiki інформація про {topic}: {wiki_info['content'][:200]}..."
-            
+            state.context = f"📖 Wiki інформація про {topic}:\n\n{wiki_info['content'][:200]}..."
+            return state
+
         except Exception as e:
-            return f"❌ Помилка отримання Wiki інформації: {str(e)}"
-    
+            state.context = f"❌ Помилка отримання Wiki інформації: {str(e)}"
+            return state
+
     def _format_issue(self, issue: Dict) -> str:
         """Форматування повної інформації про завдання"""
         title = issue.get('subject', 'Без назви')

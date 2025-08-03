@@ -8,7 +8,7 @@ from sentence_transformers import SentenceTransformer
 class RAGEngine:
     """Система пошуку через Pinecone RAG"""
     
-    def __init__(self, pinecone_index_name: str):
+    def __init__(self, pinecone_index_name: str = "streamlit"):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         # Ініціалізація Pinecone (новий API)

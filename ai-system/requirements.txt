@@ -1,8 +1,8 @@
-openai>=1.0.0
+openai
 pinecone
-gradio>=4.0.0
-requests>=2.31.0
-python-dotenv>=1.0.0
+gradio
+requests
+python-dotenv
 requests
 
 PyPDF2
@@ -20,3 +20,4 @@ accelerate
 bitsandbytes
 langchain 
 langgraph
+python-redmine
