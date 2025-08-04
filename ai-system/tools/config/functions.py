@@ -54,8 +54,18 @@ def get_functions():
                     },
                     "required": ["name"]
                 }
-            }
-            ,
+            },
+            {
+                "name": "get_my_issues",
+                "description": "Get my issues",
+                "parameters": {
+                    "type": "object", 
+                    "properties": {
+                        "name": {"type": "string", "description": "Name of the issue"}
+                    },
+                    "required": ["name"]
+                }
+            },
             {
                 "name": "get_issue_hours",
                 "description": "Get issue #453799 hours by name",
@@ -84,7 +94,7 @@ def get_functions():
                 "parameters": {
                     "type": "object", 
                     "properties": {
-                        "name": {"type": "string", "description": "Name of the issue"},
+                        "name": {"type": "string", "description": "Short description of fixing the issue"},
                         "hours": {"type": "number", "description": "Number of hours spent on the issue"},
                         "description": {"type": "string", "description": "Description of the work done"}
                     },

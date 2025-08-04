@@ -252,9 +252,8 @@ def create_interface():
             """Оновлює список сесій в dropdown"""
             new_choices = get_session_choices()
             return gr.Dropdown(choices=new_choices, value=None)
-        def remove_session(іnput_session: str):
-            new_choices = get_session_choices()
-            history_manager.delete_session(new_choices)
+        def remove_session(input_session: str):
+            history_manager.delete_session(input_session)
         load_session_btn.click(
             load_previous_session,
             inputs=[session_dropdown, session_state],

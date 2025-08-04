@@ -66,7 +66,6 @@ class Workflow:
             func = getattr(self.redmine_api, function_name)
             try:
                 result = func(state)
-                    
                 state = result
                 state.current_node = "generate_response"
                 state.intent = function_name

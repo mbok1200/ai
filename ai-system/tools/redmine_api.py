@@ -9,7 +9,8 @@ class RedmineAPI:
     def __init__(self):
         self.state = RedmineState()
 
-    def _make_request(self, patch: str, method: str = "GET", data: Dict = None) -> Dict:
+    def _make_request(self, patch: str, method: str = "GET", params: Dict = None) -> Dict:
+        print(f"Виконання запиту до Redmine API: {method} {params}/{patch}")
         """Базовий метод для HTTP запитів до Redmine"""
         if not self.state.redmine_url or not self.state.redmine_api_key:
             raise Exception("Redmine API не налаштований")
@@ -22,11 +23,11 @@ class RedmineAPI:
         
         try:
             if method == "GET":
-                response = requests.get(url, headers=headers, params=data)
+                response = requests.get(url, headers=headers, params=params)
             elif method == "POST":
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=params)
             elif method == "PUT":
-                response = requests.put(url, headers=headers, json=data)
+                response = requests.put(url, headers=headers, json=params)
             else:
                 raise ValueError(f"Непідтримуваний HTTP метод: {method}")
             
@@ -48,7 +49,27 @@ class RedmineAPI:
         except Exception as e:
             state.context = f"❌ Помилка доступу до Redmine API: {str(e)}"
             return state
-
+    def get_my_issues(self, state: DialogueState) -> DialogueState:
+        """Отримання завдань, призначених користувачу"""
+        try:
+            params = {
+                'assigned_to_id': self.state.user_id,
+                'status_id': '*',
+                'limit': 5
+            }
+            data = self._make_request('issues', params=params)
+            
+            if not data.get('issues'):
+                state.context = "📋 Завдань не знайдено"
+                return state
+            
+            issues_text = [self._format_issue_short(issue) for issue in data['issues']]
+            state.context = "📋 Ваші завдання:\n\n" + "\n".join(issues_text)
+            return state
+            
+        except Exception as e:
+            state.context = f"❌ Помилка отримання завдань: {str(e)}"
+            return state
     def get_issue_by_id(self, state: DialogueState) -> DialogueState:
         issue_id = state.function_calls[0].get("arguments", {}).get("issue_id", "")
         try:
@@ -75,18 +96,20 @@ class RedmineAPI:
         try:
             # Парсимо дату
             parsed_date = self._parse_date(date)
+            print(f"Пошук завдань за датою: {parsed_date}")
+
             params = {
                 'assigned_to_id': self.state.user_id,
                 'updated_on': f">={parsed_date}",
                 'limit': 10
             }
             
-            data = self._make_request('', params=params)
-            print(f"Parsed date: {data}")
+            data = self._make_request('issues', params=params)
             
             if not data.get('issues'):
-                return f"📅 На {date} завдань не знайдено"
-            
+                state.context = f"📅 На {date} завдань не знайдено"
+                return state
+
             issues_text = [self._format_issue_short(issue) for issue in data['issues']]
             state.context = f"📅 Завдання на {date}:\n\n" + "\n".join(issues_text)
             return state
@@ -104,9 +127,9 @@ class RedmineAPI:
                 'subject': f"~{search_term}",
                 'limit': 5
             }
-            
-            data = self._make_request('', params=params)
-            
+
+            data = self._make_request('issues', params=params)
+
             if not data.get('issues'):
                 state.context = f"🔍 За запитом '{search_term}' нічого не знайдено"
                 return state
@@ -130,7 +153,7 @@ class RedmineAPI:
                 'limit': 5
             }
 
-            data = self._make_request('', params=params)
+            data = self._make_request('issues', params=params)
 
             if not data.get('issues'):
                 state.context = f"🔍 За запитом '{issue_name}' нічого не знайдено"
@@ -152,9 +175,9 @@ class RedmineAPI:
                 'subject': f"~{issue_name}",
                 'limit': 1
             }
-            
-            data = self._make_request('', params=params)
-            
+
+            data = self._make_request('issues', params=params)
+
             if not data.get('issues'):
                 state.context = f"🔍 За запитом '{issue_name}' нічого не знайдено"
                 return state
@@ -312,26 +335,34 @@ class RedmineAPI:
 
     def _format_issue(self, issue: Dict) -> str:
         """Форматування повної інформації про завдання"""
+        issue_id = issue['id']
         title = issue.get('subject', 'Без назви')
         status = issue.get('status', {}).get('name', 'Невідомо')
         priority = issue.get('priority', {}).get('name', 'Невідомо')
         assignee = issue.get('assigned_to', {}).get('name', 'Не призначено')
         description = issue.get('description', '')[:200] + '...' if issue.get('description') else ''
-        
-        return f"""🎯 **Завдання #{issue['id']}**
+
+        # Генеруємо посилання на завдання
+        issue_link = f"{self.state.redmine_url}/issues/{issue_id}"
+
+        return f"""🎯 **Завдання #{issue_id}**
+🔗 **Посилання:** {issue_link}
 📝 **Назва:** {title}
 📊 **Статус:** {status}
 ⚡ **Пріоритет:** {priority}
 👤 **Відповідальний:** {assignee}
 📄 **Опис:** {description}"""
-    
+
     def _format_issue_short(self, issue: Dict) -> str:
-        """Короткий формат завдання"""
+        """Короткий формат завдання з посиланням"""
+        issue_id = issue['id']
         title = issue.get('subject', 'Без назви')
         status = issue.get('status', {}).get('name', 'Невідомо')
-        
-        return f"#{issue['id']} - {title} ({status})"
-    
+
+        # Генеруємо посилання
+        issue_link = f"{self.state.redmine_url}/issues/{issue_id}"
+
+        return f"**[#{issue_id}]({issue_link}) - {title} ({status})**"
     def _parse_date(self, date_str: str) -> str:
         """Парсинг дати в формат Redmine"""
         date_str = date_str.lower().strip()
